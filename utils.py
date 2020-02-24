@@ -1,19 +1,31 @@
 
 import collections
 import json
+import datetime
 
 class Configuration(collections.MutableMapping):
 
-    def __init__(self, param=None):
-        keys = ['alpha', 'beta', 'theta']
+    def __init__(self, id=None, param=None):
+        keys = [
+            'nrollouts']
+
         self.__data = {k: None for k in keys}
+        self.__data['id'] = id
+        self.__data['date'] = str(datetime.datetime.now())
 
         if type(param) is str:
             # TODO: read config from a file.
-            pass
+            with open(param, 'r') as f:
+                line = f.readline()
+                while line:
+                    line = line.split(':')
+                    line = [x.strip() for x in line]
+                    if line[0] in self.__data.keys():
+                        self.__data[line[0]] = line[1]
+                    line = f.readline()
 
         if type(param) is dict:
-            assert params.keys() = self.__data.keys()
+            assert params.keys() == self.__data.keys()
             for p, v in params.items():
                 self.__data[p] = v
 
@@ -43,6 +55,15 @@ class Configuration(collections.MutableMapping):
     def __contains__(self, k):
         return k in self.__data
 
+    def __repr__(self):
+        return 'Parameter configuration ID: {} configured at {}'.format(
+            str(self.__data['id']), str(self.__data['date'])
+        )
+
+    def __str__(self):
+        return ('Parameters configuration: \n  ' + 
+                '\n  '.join(['{}: {}'.format(key, val) 
+                for key, val in self.__data.items()]))
 
     def dump(self, f):
         #json.dump(self.__data, f)

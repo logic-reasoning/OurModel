@@ -15,17 +15,27 @@ class Environment:
         self.__agent = agent.Agent()
         self.__config = config
 
+
+    def play_episode(self, start):
+        nrollouts = self.__config.nrollouts
+
+        # 1. get neighbors
+        # 2. compute prob with agent
+        # 3. transition 
+
+
     def play_episodes(self):
         # run episodes; obtain rollouts.
 
         # step 1. collect batch of data.
 
         # step 2. compute reward.
+        # discriminative? 
         return
 
     @property
     def config(self):
-        return self.__config
+        return str(self.__config)
 
     @config.setter
     def config(self, value):

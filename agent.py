@@ -11,7 +11,7 @@ class Agent:
         self.policy = None
 
     def get_transition_probability(self, states, actions, mask):
-        prob = torch.rand_like(neighbors) 
+        prob = torch.rand_like(actions)
         prob[~mask.bool()] = -float('inf')
         return torch.softmax(prob, dim=1)
     
