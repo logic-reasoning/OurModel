@@ -38,6 +38,8 @@ class RelationGraph(dict):
         self.ePAD = 0
         self.rPAD = 0
 
+        self.__batched = False
+
     def __len__(self):
         return len(self.__graph_dict__)
 
@@ -58,7 +60,7 @@ class RelationGraph(dict):
 
         return self.__graph_dict__[idx].keys()
 
-    def get_relations_batch(self, idx, padding=None):
+    def get_relations_batch(self, idx):
         """ Return relations of batch 
         
         Arguments:
@@ -70,9 +72,9 @@ class RelationGraph(dict):
         Raises:
             NotImplementedError: [description]
         """
-        raise NotImplementedError
+        return self.relations_getter_torch[idx]
 
-    def get_neighbors_by(self, idx, relations, padding=None):
+    def get_neighbors_by_batch(self, idx, relations):
         """ TODO: reutrn batch of neighbors by relations 
         
         Arguments:
@@ -84,7 +86,7 @@ class RelationGraph(dict):
         Raises:
             NotImplementedError: [description]
         """
-        raise NotImplementedError
+        return self.neighbors_getter_torch[idx, relations, :]
 
     @property
     def relation_ends(self):
@@ -96,6 +98,10 @@ class RelationGraph(dict):
     @property
     def nodes(self):
         return list(self.__graph_dict__.keys())
+
+    @property
+    def batched(self):
+        return self.__batched
 
     def get_neighbors_by(self, idx, rel):
         if idx not in self.__graph_dict__:
@@ -113,21 +119,17 @@ class RelationGraph(dict):
         # TODO: update vocab 
         # entity vocab is not required since it is in __graph_dict__
 
-
     def add_edges_from(self, edgelist):
         for e in edgelist:
             self.add_edge(e[0], e[1], e[2])
-
 
     def add_edges_from_file(self, f):
         lines = f.readlines()
         lines = [[x.strip() for x in y.split()] for y in lines] 
         self.add_edges_from(lines)
 
-
     def make_reverse_relations(self):
         raise NotImplementedError
-
 
     def __pad(self, seq, max_len, pad):
         new_seq = seq.copy()
@@ -149,36 +151,41 @@ class RelationGraph(dict):
             push_to_dict(self.e2id, e[0])
             push_to_dict(self.e2id, e[2])
 
-
     def batchify(self, max_relations=128, max_neighbors=1024, device='cuda'):
+        if self.__batched:
+            return
+        self.__batched = True
 
         self.__indexize()
 
-        self.relations_torch = [[self.r2id[x] for x in self.get_relations(x)] for x in self.nodes]
-        self.neighbors_torch = [[[self.e2id[t] for t in self.get_neighbors_by(x, r)] for r in self.get_relations(x)] 
+        self.relations_getter_torch = [[self.r2id[x] for x in self.get_relations(x)] for x in self.nodes]
+        self.neighbors_getter_torch = [[[self.e2id[t] for t in self.get_neighbors_by(x, r)] for r in self.get_relations(x)] 
                                 for x in self.nodes]
         self.rmask = []
         self.nmask = []
 
-        max_relations = min(max_relations, max(map(len, self.relations_torch))) 
-        max_neighbors = min(max_neighbors, max(map(lambda x: max(map(len, x)), self.neighbors_torch)))
+        max_relations = min(max_relations, max(map(len, self.relations_getter_torch))) 
+        max_neighbors = min(max_neighbors, max(map(lambda x: max(map(len, x)), self.neighbors_getter_torch)))
         
-        print('max neighbors: {}'.format(max(map(lambda x: max(map(len, x)), self.neighbors_torch))))
-        print('max relations: {}'.format(max(map(len, self.relations_torch)))) 
+        print('max neighbors: {}'.format(max(map(lambda x: max(map(len, x)), self.neighbors_getter_torch))))
+        print('max relations: {}'.format(max(map(len, self.relations_getter_torch)))) 
 
-        self.relations_torch = [
-            self.__pad(x, max_relations, self.rPAD) for x in self.relations_torch
+        self.relations_getter_torch = [
+            self.__pad(x, max_relations, self.rPAD) for x in self.relations_getter_torch
         ]
-        self.neighbors_torch = [
-            self.__pad(x, max_relations, [self.ePAD] * max_neighbors) for x in self.neighbors_torch
+        self.neighbors_getter_torch = [
+            self.__pad(x, max_relations, [self.ePAD] * max_neighbors) for x in self.neighbors_getter_torch
         ]
-        self.neighbors_torch = [[self.__pad(x, max_neighbors, self.ePAD) for x in y]  
-            for y in self.neighbors_torch
+        self.neighbors_getter_torch = [[self.__pad(x, max_neighbors, self.ePAD) for x in y]  
+            for y in self.neighbors_getter_torch
         ]
          
-        self.relations_torch = torch.tensor(self.relations_torch).long().to(device)
-        self.neighbors_torch = torch.tensor(self.neighbors_torch).long().to(device)
+        self.relations_getter_torch = torch.tensor(self.relations_getter_torch).long().to(device)
+        self.neighbors_getter_torch = torch.tensor(self.neighbors_getter_torch).long().to(device)
 
+        self.relations_torch = torch.tensor([
+            [self.e2id[e[0]], self.r2id[e[1]], self.e2id[e[2]]] for e in self.__relations__
+        ]).long().to(device)
 
     def to_networkx(self, rel_as_nodes=False, directional=False):
 
@@ -201,3 +208,33 @@ class RelationGraph(dict):
                     G.add_edge(r[2], r[0], relation='reverse ' + r[1], weight=1)
 
         return G
+
+
+class RelationSampler:
+    def __init__(self, graph, batch_size):
+        self.__graph = graph
+        assert self.__graph.batched
+        self.triplets = self.__graph.relations_torch 
+        self.batch_size = batch_size
+
+        self.reshuffle()
+
+    def reshuffle(self):
+        self.idxes = torch.randperm(len(self.triplets))
+        self.current_idx = 0
+
+    def sample_one_batch(self):
+        
+        maxlen = len(self.triplets)
+        batch = self.idxes[self.current_idx: min(maxlen, self.current_idx+self.batch_size)]
+        self.current_idx = self.current_idx + self.batch_size
+        if self.current_idx >= maxlen:
+            return None
+
+        return self.triplets[batch]
+
+    def sample_batches(self):
+        batch = self.sample_one_batch()
+        while batch is not None:
+            yield batch
+            batch = self.sample_one_batch()

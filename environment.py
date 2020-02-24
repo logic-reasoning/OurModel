@@ -15,8 +15,10 @@ class Environment:
         self.__agent = agent.Agent()
         self.__config = config
 
+        self.__graph.batchify()
+        self.__sampler = graph.RelationSampler(self.__graph, config.batch_size)
 
-    def play_episode(self, start):
+    def play_episode(self, start_idx):
         nrollouts = self.__config.nrollouts
 
         # 1. get neighbors
@@ -28,7 +30,7 @@ class Environment:
         # run episodes; obtain rollouts.
 
         # step 1. collect batch of data.
-
+        
         # step 2. compute reward.
         # discriminative? 
         return

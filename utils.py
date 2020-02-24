@@ -7,7 +7,7 @@ class Configuration(collections.MutableMapping):
 
     def __init__(self, id=None, param=None):
         keys = [
-            'nrollouts']
+            'nrollouts', 'batch_size']
 
         self.__data = {k: None for k in keys}
         self.__data['id'] = id
@@ -32,6 +32,11 @@ class Configuration(collections.MutableMapping):
     def __eq__(self, tgt):
         return tgt.keys() == self.__data.keys()
 
+    def __getattr__(self, name):
+        if name in self.__data:
+            return self.__data[name]
+        raise AttributeError("No such attribute in configuration: " + name)
+
     def __getitem__(self, key):
         return self.__data[key]
 
@@ -51,6 +56,9 @@ class Configuration(collections.MutableMapping):
         if k not in self.__data:
             raise KeyError(k)
         self.__data[k] = v
+
+    def __setattr__(self, name, value):
+        self.__setitem__(name, value)
 
     def __contains__(self, k):
         return k in self.__data
